@@ -6,7 +6,8 @@ Black / graphite UI with metallic gold accents and a crown logo.
 ## Install on iPhone (no Mac, free Apple ID, Sideloadly)
 
 1. Download the latest IPA: <https://github.com/MaToStudios/Kingvid/releases/latest> (`KingVid.ipa`).
-   Direct link for build 1: <https://github.com/MaToStudios/Kingvid/releases/download/build-1/KingVid.ipa>
+   Direct link for build 3: <https://github.com/MaToStudios/Kingvid/releases/download/build-3/KingVid.ipa>
+   (Release `build-2` is a broken build with no executable; ignore it.)
 2. Install [Sideloadly](https://sideloadly.io) on your Windows PC (also install iTunes and iCloud from
    apple.com, *not* the Microsoft Store versions, if Sideloadly asks for them).
 3. Connect the iPhone by USB, unlock it and tap **Trust**.
@@ -18,10 +19,17 @@ Black / graphite UI with metallic gold accents and a crown logo.
 
 Free Apple IDs expire apps after **7 days** and allow 3 sideloaded apps at once; re-run Sideloadly to refresh.
 
+## What's in the app
+
+Home (search, YouTube card, recents, quick access) · YouTube (native search with suggestions, route chips, watch screen
+with native controls, mini-player; the real YouTube player and site keep working) · Browser (tabs, history, bookmarks) ·
+Library · Settings. Settings > Troubleshooting > Playback diagnostics has a test page (MP4, HLS, MP3) and a copyable report.
+
 ## How the build works
 
 `project.yml` (XcodeGen) → `.github/workflows/build-ipa.yml` builds an **unsigned** Release IPA on a macOS
-runner and publishes it as a GitHub Release (`build-N`). Sideloadly signs it with your Apple ID.
+runner and publishes it as a GitHub Release (`build-N`). The job fails (and publishes nothing) if the compile fails or the
+IPA has no executable. Sideloadly signs it with your Apple ID.
 
 ## Background playback design
 
