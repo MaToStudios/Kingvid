@@ -15,10 +15,15 @@ final class ScriptMessageProxy: NSObject, WKScriptMessageHandler {
 
 @MainActor
 enum WebViewFactory {
-    /// Mobile Safari-like user agent suffix so sites serve their normal mobile experience.
-    private static let userAgentSuffix = "Version/17.5 Mobile/15E148 Safari/604.1"
+    /// Safari-style user agent suffix using the *real* OS version. Google sign-in and many players refuse
+    /// embedded-WebView user agents (no "Safari/" token) and are suspicious of mismatched versions.
+    static var userAgentSuffix: String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        return "Version/\(v.majorVersion).\(v.minorVersion) Mobile/15E148 Safari/604.1"
+    }
 
-    static func makeConfiguration(isPrivate: Bool, handler: WKScriptMessageHandler) -> WKWebViewConfiguration {
+    static func makeConfiguration(kind: BrowserTab.Kind, isPrivate: Bool,
+                                  handler: WKScriptMessageHandler) -> WKWebViewConfiguration {
         let config = WKWebViewConfiguration()
 
         // Media: inline playback, no user-gesture requirement, PiP + AirPlay allowed.
@@ -26,41 +31,57 @@ enum WebViewFactory {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsPictureInPictureMediaPlayback = true
         config.allowsAirPlayForMediaPlayback = true
+        // Without this, the HTML Fullscreen API (Vimeo, Dailymotion, Twitch, ...) silently does nothing on iPhone.
+        config.preferences.isElementFullscreenEnabled = true
 
         config.websiteDataStore = isPrivate ? WKWebsiteDataStore.nonPersistent() : WKWebsiteDataStore.default()
         config.applicationNameForUserAgent = userAgentSuffix
         config.defaultWebpagePreferences.allowsContentJavaScript = true
-        config.defaultWebpagePreferences.preferredContentMode = Prefs.desktopMode ? .desktop : .mobile
-        config.suppressesIncrementalRendering = false
+        config.defaultWebpagePreferences.preferredContentMode = Prefs.desktopMode && kind == .generic ? .desktop : .mobile
 
         let controller = WKUserContentController()
-        controller.addUserScript(userScript())
+        for script in userScripts(kind: kind) { controller.addUserScript(script) }
         controller.add(handler, name: "kvMedia")
+        controller.add(handler, name: "kvNav")
         config.userContentController = controller
         return config
     }
 
-    static func userScript() -> WKUserScript {
-        WKUserScript(source: MediaScripts.bridge(spoofVisibility: Prefs.spoofVisibility,
-                                                 autoResume: Prefs.autoResume),
-                     injectionTime: .atDocumentStart,
-                     forMainFrameOnly: false)
+    static func userScripts(kind: BrowserTab.Kind) -> [WKUserScript] {
+        var scripts = [
+            WKUserScript(source: MediaScripts.bridge(spoofVisibility: Prefs.spoofVisibility,
+                                                     autoResume: Prefs.autoResume),
+                         injectionTime: .atDocumentStart, forMainFrameOnly: false)
+        ]
+        switch kind {
+        case .generic:
+            break
+        case .youtubeBrowse, .youtubePlayer:
+            let role = kind == .youtubeBrowse ? "browse" : "player"
+            scripts.append(WKUserScript(source: YouTubeScripts.script(role: role, hideChrome: Prefs.ytHideChrome),
+                                        injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        }
+        return scripts
     }
 
-    /// Changes whenever a setting that affects the injected script changes.
+    /// Changes whenever a setting that affects the injected scripts changes.
     static var scriptSignature: String {
-        "\(Prefs.spoofVisibility)-\(Prefs.autoResume)"
+        "\(Prefs.spoofVisibility)-\(Prefs.autoResume)-\(Prefs.ytHideChrome)"
     }
 
-    static func style(_ webView: WKWebView) {
+    static func style(_ webView: WKWebView, kind: BrowserTab.Kind) {
         let bg = UIColor(Theme.background)
-        webView.allowsBackForwardNavigationGestures = true
-        webView.allowsLinkPreview = true
+        webView.allowsBackForwardNavigationGestures = kind == .generic
+        webView.allowsLinkPreview = kind == .generic
         webView.isOpaque = false
         webView.backgroundColor = bg
         webView.scrollView.backgroundColor = bg
         webView.underPageBackgroundColor = bg
         webView.isInspectable = true
+        if kind != .generic {
+            // Makes `prefers-color-scheme: dark` true so YouTube renders its dark theme.
+            webView.overrideUserInterfaceStyle = .dark
+        }
     }
 }
 

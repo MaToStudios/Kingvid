@@ -23,6 +23,13 @@ struct MediaSession: Equatable {
     var hasPrevious: Bool
 }
 
+/// Which tab currently owns the media session. Separate from `MediaCenter` so views that only need the
+/// owner (to keep its web view attached) don't re-render every second when playback position ticks.
+@MainActor
+final class MediaOwnership: ObservableObject {
+    @Published var tabID: UUID?
+}
+
 /// Central coordinator for media playback: owns the audio session, Now Playing info,
 /// Lock Screen / Control Center commands, interruption + background handling and PiP triggers.
 ///
@@ -32,10 +39,15 @@ struct MediaSession: Equatable {
 final class MediaCenter: ObservableObject {
     @Published private(set) var session: MediaSession?
     @Published private(set) var artwork: UIImage?
+    /// Last media failure reported by a page's player (cleared when playback next starts).
+    @Published private(set) var lastError: String?
     let pipSupported = AVPictureInPictureController.isPictureInPictureSupported()
+    let ownership = MediaOwnership()
 
-    weak var browser: BrowserStore?
+    /// Every web view that can own playback (browser tabs + YouTube views). Set by `AppModel`.
+    var allTabs: () -> [BrowserTab] = { [] }
     private let library: LibraryStore
+    private var loggedHosts = Set<String>()
 
     private var activeFrame: WKFrameInfo?
     private var remote: RemoteCommands?
@@ -62,10 +74,25 @@ final class MediaCenter: ObservableObject {
         observeSystemNotifications()
     }
 
-    // MARK: - Incoming state from pages
+    private func findTab(_ id: UUID) -> BrowserTab? { allTabs().first { $0.id == id } }
+
+    // MARK: - Incoming messages from pages
 
     func handle(_ body: [String: Any], from tab: BrowserTab, frame: WKFrameInfo) {
-        guard (body["type"] as? String) == "state" else { return }
+        // The YouTube browse view never owns playback; videos open in the dedicated player view.
+        guard tab.kind != .youtubeBrowse else { return }
+        switch body["type"] as? String {
+        case "mediaError":
+            handleMediaError(body, from: tab)
+            return
+        case "diag":
+            handleDiag(body)
+            return
+        case "state":
+            break
+        default:
+            return
+        }
 
         let paused = (body["paused"] as? Bool) ?? true
         let ended = (body["ended"] as? Bool) ?? false
@@ -102,16 +129,45 @@ final class MediaCenter: ObservableObject {
         let previous = session
         if let previous, previous.tabID != tab.id {
             // A new tab took over: stop the old one so two sites never play at once.
-            browser?.tab(withID: previous.tabID)?.runKV("cmd('pause')")
+            findTab(previous.tabID)?.runKV("cmd('pause')")
         }
-        if previous?.tabID != tab.id { browser?.mediaTabID = tab.id }
+        if previous?.tabID != tab.id { ownership.tabID = tab.id }
         activeFrame = frame
+        if updated.isPlaying { lastError = nil }
+        if previous?.isPlaying != updated.isPlaying {
+            DiagnosticsLog.shared.add("media", "\(updated.isPlaying ? "playing" : "paused") · \(updated.host) · \(updated.isVideo ? "video" : "audio") · \(Int(updated.position))/\(Int(updated.duration))s")
+        }
 
         if previous != updated { session = updated }
         loadArtwork(updated.artworkURL)
         playbackStateChanged(wasPlaying: previous?.isPlaying ?? false, session: updated)
         updateNowPlaying()
         persistRecent(updated, wasPlaying: previous?.isPlaying ?? false)
+    }
+
+    private func handleMediaError(_ body: [String: Any], from tab: BrowserTab) {
+        let code = (body["code"] as? NSNumber)?.intValue ?? 0
+        let host = (body["host"] as? String) ?? tab.url?.host ?? ""
+        let meaning: String
+        switch code {
+        case 1: meaning = "playback aborted"
+        case 2: meaning = "network error"
+        case 3: meaning = "decode error"
+        case 4: meaning = "format not supported"
+        default: meaning = "unknown error"
+        }
+        let detail = (body["message"] as? String) ?? ""
+        DiagnosticsLog.shared.add("media", "ERROR \(host): \(meaning) (code \(code)) \(detail)")
+        // Only surface it for the tab the user is actually watching.
+        if session?.tabID == tab.id || tab.kind == .youtubePlayer {
+            lastError = "\(host): \(meaning)"
+        }
+    }
+
+    private func handleDiag(_ body: [String: Any]) {
+        let host = (body["host"] as? String) ?? ""
+        guard !host.isEmpty, loggedHosts.insert(host).inserted else { return }
+        DiagnosticsLog.shared.add("page", "\(host) · MediaSource=\(body["mse"] ?? "?") ManagedMediaSource=\(body["mms"] ?? "?") HLS=\(body["hls"] ?? "?") mp4=\(body["mp4"] ?? "?") webm=\(body["webm"] ?? "?")")
     }
 
     private static func cleanTitle(_ raw: String, host: String) -> String {
@@ -149,7 +205,7 @@ final class MediaCenter: ObservableObject {
     /// Stops playback and dismisses the mini-player.
     func closeSession() {
         guard let current = session else { return }
-        browser?.tab(withID: current.tabID)?.runKV("cmd('pause')", frame: activeFrame)
+        findTab(current.tabID)?.runKV("cmd('pause')", frame: activeFrame)
         clearSession()
     }
 
@@ -167,7 +223,7 @@ final class MediaCenter: ObservableObject {
         artwork = nil
         artworkURL = nil
         activeFrame = nil
-        browser?.mediaTabID = nil
+        ownership.tabID = nil
         keepAlive.stop()
         keepAliveStopTask?.cancel()
         updateNowPlaying()
@@ -175,7 +231,7 @@ final class MediaCenter: ObservableObject {
     }
 
     private func send(_ command: String, _ argument: Double? = nil) {
-        guard let current = session, let tab = browser?.tab(withID: current.tabID) else { return }
+        guard let current = session, let tab = findTab(current.tabID) else { return }
         let arg: String
         if let argument, argument.isFinite { arg = ", \(argument)" } else { arg = "" }
         tab.runKV("cmd('\(command)'\(arg))", frame: activeFrame)
@@ -266,7 +322,7 @@ final class MediaCenter: ObservableObject {
 
     private func persistRecent(_ s: MediaSession, wasPlaying: Bool) {
         guard let url = s.pageURL,
-              !(browser?.tab(withID: s.tabID)?.isPrivate ?? false) else { return }
+              !(findTab(s.tabID)?.isPrivate ?? false) else { return }
         let key = url.absoluteString + "|" + s.title
         let now = Date()
         let started = s.isPlaying && key != lastPersistKey
@@ -344,11 +400,11 @@ final class MediaCenter: ObservableObject {
 
     /// Tells every tab (and, through postMessage, every iframe) that the app is backgrounded.
     private func broadcastBackground(_ flag: Bool) {
-        for tab in browser?.tabs ?? [] {
+        for tab in allTabs() {
             tab.runKV("setBg(\(flag))")
         }
         if let s = session, let frame = activeFrame {
-            browser?.tab(withID: s.tabID)?.runKV("setBg(\(flag))", frame: frame)
+            findTab(s.tabID)?.runKV("setBg(\(flag))", frame: frame)
         }
     }
 
@@ -395,17 +451,24 @@ final class MediaCenter: ObservableObject {
     }
 }
 
-/// Fallback Now Playing artwork: the KingVid crown on black.
+/// Fallback Now Playing artwork: the KingVid crown on black (rendered once per accent colour).
 @MainActor
 enum CrownArtwork {
-    static let image: UIImage = {
-        let view = ZStack {
-            Color(hex: 0x0B0B0C)
-            CrownLogo().padding(120)
+    private static var cache: [String: UIImage] = [:]
+
+    static var image: UIImage {
+        let key = Theme.accent.crownAsset
+        if let cached = cache[key] { return cached }
+        let size = CGSize(width: 600, height: 600)
+        let rendered = UIGraphicsImageRenderer(size: size).image { context in
+            UIColor(Color(hex: 0x0B0B0C)).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            if let crown = UIImage(named: key) {
+                let side: CGFloat = 340
+                crown.draw(in: CGRect(x: (size.width - side) / 2, y: (size.height - side) / 2, width: side, height: side))
+            }
         }
-        .frame(width: 600, height: 600)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 1
-        return renderer.uiImage ?? UIImage()
-    }()
+        cache[key] = rendered
+        return rendered
+    }
 }

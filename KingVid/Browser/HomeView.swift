@@ -111,9 +111,8 @@ struct HomeView: View {
 
     private var header: some View {
         VStack(spacing: 12) {
-            CrownLogo(shimmer: true)
-                .frame(width: 84, height: 84)
-            KingVidWordmark(size: 26)
+            CrownHero(size: 64)
+            KingVidWordmark(size: 24)
             Text("PREMIUM VIDEO BROWSER")
                 .font(.system(size: 10, weight: .medium, design: .serif))
                 .tracking(3)
@@ -128,7 +127,7 @@ struct HomeView: View {
     }
 }
 
-private struct ShortcutTile: View {
+struct ShortcutTile: View {
     let title: String
     let symbol: String?
     let monogram: String?
@@ -163,7 +162,7 @@ private struct ShortcutTile: View {
     }
 }
 
-private struct RecentCard: View {
+struct RecentCard: View {
     let item: RecentMedia
     let action: () -> Void
 

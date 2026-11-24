@@ -13,7 +13,7 @@ struct TabSwitcherView: View {
                     ForEach(browser.tabs) { tab in
                         TabCard(tab: tab, isSelected: tab.id == browser.selectedID) {
                             browser.select(tab)
-                            app.sheet = nil
+                            app.sheet = nil; app.section = .browser
                         } onClose: {
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                 browser.close(tab)
@@ -37,26 +37,26 @@ struct TabSwitcherView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close All", role: .destructive) {
                         browser.closeAll()
-                        app.sheet = nil
+                        app.sheet = nil; app.section = .browser
                     }
                     .foregroundStyle(Theme.textSecondary)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { app.sheet = nil }
+                    Button("Done") { app.sheet = nil; app.section = .browser }
                         .fontWeight(.semibold)
                         .foregroundStyle(Theme.gold)
                 }
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button {
                         browser.newTab(isPrivate: true)
-                        app.sheet = nil
+                        app.sheet = nil; app.section = .browser
                     } label: {
                         Label("Private", systemImage: "eye.slash")
                     }
                     Spacer()
                     Button {
                         browser.newTab()
-                        app.sheet = nil
+                        app.sheet = nil; app.section = .browser
                     } label: {
                         Label("New Tab", systemImage: "plus")
                     }

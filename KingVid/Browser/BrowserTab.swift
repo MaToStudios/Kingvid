@@ -1,13 +1,26 @@
 import SwiftUI
 import WebKit
 
-/// One browser tab. Owns a long-lived WKWebView so playback survives tab switches.
+/// One web view with its state. Owns a long-lived WKWebView so playback survives tab switches.
+/// Generic tabs live in the Browser; the YouTube experience owns two more (browse + player).
 @MainActor
 final class BrowserTab: NSObject, ObservableObject, Identifiable {
+    enum Kind {
+        case generic
+        case youtubeBrowse
+        case youtubePlayer
+    }
+
     let id = UUID()
     let webView: WKWebView
     let isPrivate: Bool
+    let kind: Kind
     weak var store: BrowserStore?
+
+    // Hooks used by the YouTube experience.
+    var onWatchRequest: ((URL) -> Void)?
+    var onOpenExternal: ((URL) -> Void)?
+    var onURLChange: ((URL?) -> Void)?
 
     @Published var title = ""
     @Published var url: URL?
@@ -27,30 +40,35 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     private var historyTask: Task<Void, Never>?
     private var lastHistoryURL: URL?
 
-    init(url: URL?, isPrivate: Bool, store: BrowserStore) {
+    init(url: URL?, isPrivate: Bool, kind: Kind = .generic, store: BrowserStore) {
         let proxy = ScriptMessageProxy()
         let webView = WKWebView(frame: .zero,
-                                configuration: WebViewFactory.makeConfiguration(isPrivate: isPrivate, handler: proxy))
+                                configuration: WebViewFactory.makeConfiguration(kind: kind, isPrivate: isPrivate, handler: proxy))
         self.webView = webView
         self.isPrivate = isPrivate
+        self.kind = kind
         self.store = store
         self.messageProxy = proxy
         self.pendingURL = url
         self.url = url
-        self.showsHome = (url == nil)
-        self.desktopMode = Prefs.desktopMode
+        self.showsHome = (url == nil && kind == .generic)
+        self.desktopMode = Prefs.desktopMode && kind == .generic
         super.init()
 
         proxy.target = self
-        WebViewFactory.style(webView)
+        WebViewFactory.style(webView, kind: kind)
         webView.navigationDelegate = self
         webView.uiDelegate = self
         installObservers()
 
-        let refresh = UIRefreshControl()
-        refresh.tintColor = UIColor(Theme.gold)
-        refresh.addTarget(self, action: #selector(pulledToRefresh(_:)), for: .valueChanged)
-        webView.scrollView.refreshControl = refresh
+        // Pull-to-refresh only on ordinary pages. On video pages a stray downward drag at the top would
+        // reload the page and restart the video, so YouTube views never get it.
+        if kind == .generic {
+            let refresh = UIRefreshControl()
+            refresh.tintColor = UIColor(Theme.gold)
+            refresh.addTarget(self, action: #selector(pulledToRefresh(_:)), for: .valueChanged)
+            webView.scrollView.refreshControl = refresh
+        }
     }
 
     // MARK: Navigation API
@@ -62,6 +80,14 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
         showsHome = false
         self.url = url
         webView.load(URLRequest(url: url))
+    }
+
+    /// Loads an in-memory page (used by the playback test page).
+    func loadHTML(_ html: String, title: String) {
+        pendingURL = nil
+        showsHome = false
+        self.title = title
+        webView.loadHTMLString(html, baseURL: URL(string: "https://kingvid.test/"))
     }
 
     /// Restored tabs load lazily, the first time they are shown.
@@ -160,6 +186,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
             lastHistoryURL = current
             store?.persistSession()
             scheduleHistoryRecord()
+            onURLChange?(current)
         }
     }
 
@@ -181,6 +208,7 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
 
     private func handleFailure(_ error: Error) {
         let nsError = error as NSError
+        DiagnosticsLog.shared.add("nav", "load failed: \(nsError.domain) \(nsError.code) \(nsError.localizedDescription)")
         guard nsError.domain == NSURLErrorDomain, nsError.code != NSURLErrorCancelled else { return }
         let failing = (nsError.userInfo[NSURLErrorFailingURLStringErrorKey] as? String) ?? webView.url?.absoluteString ?? ""
         let html = ErrorPage.html(message: nsError.localizedDescription, url: failing)
@@ -200,21 +228,42 @@ extension BrowserTab: WKNavigationDelegate {
             return
         }
         let scheme = url.scheme?.lowercased() ?? ""
-        if ["http", "https", "about", "data", "blob", "file", "javascript"].contains(scheme) {
-            preferences.preferredContentMode = desktopMode ? .desktop : .mobile
-            decisionHandler(.allow, preferences)
-        } else {
+        guard ["http", "https", "about", "data", "blob", "file", "javascript"].contains(scheme) else {
             // Don't bounce into other apps (youtube://, itms-apps://, ...); only allow basic system schemes.
             if ["tel", "mailto", "sms", "facetime"].contains(scheme) {
                 UIApplication.shared.open(url)
+            } else {
+                DiagnosticsLog.shared.add("nav", "blocked scheme \(scheme):// from \(self.webView.url?.host ?? "?")")
             }
             decisionHandler(.cancel, preferences)
+            return
         }
+
+        if kind == .youtubeBrowse, navigationAction.targetFrame?.isMainFrame == true {
+            // A real (non-SPA) navigation to a video opens it in the dedicated player view.
+            if YouTubeURL.isWatch(url) {
+                onWatchRequest?(url)
+                decisionHandler(.cancel, preferences)
+                return
+            }
+            // Tapped links that leave YouTube/Google open in the Browser tab instead.
+            if navigationAction.navigationType == .linkActivated, !YouTubeURL.isInternalHost(url) {
+                onOpenExternal?(url)
+                decisionHandler(.cancel, preferences)
+                return
+            }
+        }
+
+        preferences.preferredContentMode = desktopMode ? .desktop : .mobile
+        decisionHandler(.allow, preferences)
     }
 
     func webView(_ webView: WKWebView,
                  decidePolicyFor navigationResponse: WKNavigationResponse,
                  decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+        if !navigationResponse.canShowMIMEType {
+            DiagnosticsLog.shared.add("nav", "cannot display \(navigationResponse.response.mimeType ?? "unknown type") (download not supported)")
+        }
         decisionHandler(navigationResponse.canShowMIMEType ? .allow : .cancel)
     }
 
@@ -238,6 +287,7 @@ extension BrowserTab: WKNavigationDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        DiagnosticsLog.shared.add("nav", "web content process terminated; reloading")
         webView.reload()
     }
 }
@@ -250,8 +300,13 @@ extension BrowserTab: WKUIDelegate {
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
         if Prefs.blockPopups && navigationAction.navigationType == .other { return nil }
-        if let url = navigationAction.request.url, url.scheme?.hasPrefix("http") == true {
+        guard let url = navigationAction.request.url, url.scheme?.hasPrefix("http") == true else { return nil }
+        if kind == .generic {
             store?.openInNewTab(url, isPrivate: isPrivate)
+        } else if YouTubeURL.isWatch(url) {
+            onWatchRequest?(url)
+        } else {
+            onOpenExternal?(url)
         }
         return nil
     }
@@ -288,12 +343,20 @@ extension BrowserTab: WKUIDelegate {
     }
 }
 
-// MARK: - Media bridge
+// MARK: - Script messages (media bridge + YouTube link interception)
 
 extension BrowserTab: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController,
                                didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
-        store?.media.handle(body, from: self, frame: message.frameInfo)
+        switch message.name {
+        case "kvNav":
+            if (body["type"] as? String) == "watch",
+               let string = body["url"] as? String, let url = URL(string: string) {
+                onWatchRequest?(url)
+            }
+        default:
+            store?.media.handle(body, from: self, frame: message.frameInfo)
+        }
     }
 }

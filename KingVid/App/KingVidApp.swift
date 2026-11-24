@@ -12,6 +12,7 @@ struct KingVidApp: App {
                 .environmentObject(app.browser)
                 .environmentObject(app.media)
                 .environmentObject(app.library)
+                .environmentObject(app.youtube)
                 .modelContainer(app.container)
                 .preferredColorScheme(.dark)
         }

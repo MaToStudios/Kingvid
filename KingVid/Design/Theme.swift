@@ -18,6 +18,15 @@ enum Theme {
         case gold, champagne, roseGold
         var id: String { rawValue }
 
+        /// Pre-rendered crown artwork in the asset catalog.
+        var crownAsset: String {
+            switch self {
+            case .gold: return "CrownGold"
+            case .champagne: return "CrownChampagne"
+            case .roseGold: return "CrownRose"
+            }
+        }
+
         var title: String {
             switch self {
             case .gold: return "Royal Gold"

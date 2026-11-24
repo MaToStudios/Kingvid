@@ -40,11 +40,6 @@ struct LibraryView: View {
                         .tracking(3)
                         .foregroundStyle(Theme.goldGradientHorizontal)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { app.sheet = nil }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Theme.gold)
-                }
             }
         }
         .tint(Theme.gold)

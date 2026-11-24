@@ -78,32 +78,6 @@ struct PremiumCard: ViewModifier {
 
 extension View {
     func premiumCard(radius: CGFloat = 18) -> some View { modifier(PremiumCard(radius: radius)) }
-    func shimmer() -> some View { modifier(ShimmerModifier()) }
-}
-
-struct ShimmerModifier: ViewModifier {
-    @State private var phase: CGFloat = -1
-
-    func body(content: Content) -> some View {
-        content
-            .overlay(
-                GeometryReader { geo in
-                    LinearGradient(colors: [Color.clear, Color.white.opacity(0.6), Color.clear],
-                                   startPoint: .leading, endPoint: .trailing)
-                        .frame(width: geo.size.width * 0.5)
-                        .rotationEffect(.degrees(18))
-                        .offset(x: phase * geo.size.width * 1.5)
-                        .blendMode(.plusLighter)
-                }
-                .mask(content)
-                .allowsHitTesting(false)
-            )
-            .onAppear {
-                withAnimation(.linear(duration: 2.4).delay(1.0).repeatForever(autoreverses: false)) {
-                    phase = 1
-                }
-            }
-    }
 }
 
 struct SectionLabel: View {

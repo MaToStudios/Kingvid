@@ -11,7 +11,9 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.keepAlive) private var keepAlive = false
     @AppStorage(SettingsKey.resumeAfterInterruption) private var resumeAfterInterruption = true
     // PiP
-    @AppStorage(SettingsKey.autoPiP) private var autoPiP = true
+    @AppStorage(SettingsKey.autoPiP) private var autoPiP = false
+    // YouTube
+    @AppStorage(SettingsKey.ytHideChrome) private var ytHideChrome = true
     // Lock screen
     @AppStorage(SettingsKey.lockScreenControls) private var lockScreenControls = true
     @AppStorage(SettingsKey.skipInterval) private var skipInterval: Double = 15
@@ -35,9 +37,11 @@ struct SettingsView: View {
                 backgroundSection
                 pipSection
                 lockScreenSection
+                youtubeSection
                 searchSection
                 browserSection
                 appearanceSection
+                troubleshootingSection
                 aboutSection
             }
             .scrollContentBackground(.hidden)
@@ -51,11 +55,6 @@ struct SettingsView: View {
                         .font(.system(size: 14, weight: .semibold, design: .serif))
                         .tracking(3)
                         .foregroundStyle(Theme.goldGradientHorizontal)
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { app.sheet = nil }
-                        .fontWeight(.semibold)
-                        .foregroundStyle(Theme.gold)
                 }
             }
             .confirmationDialog("Clear all browsing history?", isPresented: $confirmClearHistory, titleVisibility: .visible) {
@@ -98,11 +97,11 @@ struct SettingsView: View {
 
     private var pipSection: some View {
         Section {
-            Toggle("Auto Picture in Picture when leaving app", isOn: $autoPiP)
+            Toggle("Try automatic PiP when leaving the app", isOn: $autoPiP)
         } header: {
             SectionLabel("Picture in Picture")
         } footer: {
-            Text("Video starts floating automatically when you swipe home or switch apps. You can also start it from the player (expand the mini-player).")
+            Text("Tap the PiP button in the YouTube player or the expanded player to float the video: that is the reliable way. Automatic PiP is experimental, because iOS only allows apps to start it in limited situations (for example from a fullscreen video).")
         }
         .rowStyle()
     }
@@ -117,6 +116,32 @@ struct SettingsView: View {
             }
         } header: {
             SectionLabel("Lock Screen")
+        }
+        .rowStyle()
+    }
+
+    private var youtubeSection: some View {
+        Section {
+            Toggle("Use KingVid navigation on YouTube", isOn: $ytHideChrome)
+        } header: {
+            SectionLabel("YouTube")
+        } footer: {
+            Text("Hides YouTube's own top and bottom bars because KingVid draws native ones. Turn this off if a YouTube page looks wrong. Applies to pages you open next.")
+        }
+        .rowStyle()
+    }
+
+    private var troubleshootingSection: some View {
+        Section {
+            NavigationLink {
+                DiagnosticsView()
+            } label: {
+                Label("Playback diagnostics", systemImage: "stethoscope")
+            }
+        } header: {
+            SectionLabel("Troubleshooting")
+        } footer: {
+            Text("Shows what the player reported (errors, codecs, audio session) and offers a test page with MP4, HLS and MP3 players.")
         }
         .rowStyle()
     }

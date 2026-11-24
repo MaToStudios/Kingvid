@@ -8,6 +8,7 @@ struct AddressBar: View {
 
     @EnvironmentObject var browser: BrowserStore
     @EnvironmentObject var library: LibraryStore
+    @EnvironmentObject var app: AppModel
 
     @FocusState private var focused: Bool
     @State private var text = ""
@@ -19,7 +20,14 @@ struct AddressBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
+            if !focused {
+                navButton("chevron.left", enabled: tab.canGoBackEffective) { tab.goBack() }
+                if tab.canGoForward {
+                    navButton("chevron.right", enabled: true) { tab.goForward() }
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
             field
             if focused {
                 Button("Cancel") { focused = false }
@@ -27,8 +35,8 @@ struct AddressBar: View {
                     .foregroundStyle(Theme.gold)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             } else {
+                tabsButton
                 actionsMenu
-                    .transition(.opacity)
             }
         }
         .padding(.horizontal, 12)
@@ -58,6 +66,40 @@ struct AddressBar: View {
                 Task { @MainActor in field.selectAll(nil) }
             }
         }
+    }
+
+    // MARK: Navigation controls
+
+    private func navButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(enabled ? AnyShapeStyle(Theme.goldGradientVertical) : AnyShapeStyle(Theme.textTertiary))
+                .frame(width: 30, height: 42)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(IconPressStyle())
+        .disabled(!enabled)
+    }
+
+    private var tabsButton: some View {
+        Button {
+            tab.captureSnapshot()
+            app.sheet = .tabs
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Theme.goldGradient, lineWidth: 2)
+                    .frame(width: 24, height: 24)
+                Text("\(browser.tabs.count)")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(Theme.goldGradient)
+            }
+            .frame(width: 32, height: 42)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(IconPressStyle())
+        .accessibilityLabel("Tabs")
     }
 
     // MARK: Field
@@ -192,7 +234,7 @@ struct AddressBar: View {
             Image(systemName: "ellipsis.circle")
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(Theme.goldGradientVertical)
-                .frame(width: 36, height: 42)
+                .frame(width: 34, height: 42)
         }
     }
 }

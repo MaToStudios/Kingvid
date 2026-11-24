@@ -61,7 +61,7 @@ struct MiniPlayerView: View {
                 .buttonStyle(IconPressStyle())
                 .disabled(s.isLive)
 
-                Button { app.sheet = .player } label: {
+                Button { app.expandPlayer() } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(Theme.textSecondary)
@@ -89,6 +89,6 @@ struct MiniPlayerView: View {
         .padding(.horizontal, 10)
         .padding(.bottom, 6)
         .contentShape(Rectangle())
-        .onTapGesture { app.sheet = .player }
+        .onTapGesture { app.expandPlayer() }
     }
 }

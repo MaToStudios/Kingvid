@@ -146,7 +146,7 @@ enum MediaScripts {
       }
 
       var EVENTS = ['play', 'playing', 'pause', 'ended', 'loadedmetadata', 'durationchange',
-                    'ratechange', 'seeked', 'timeupdate', 'webkitpresentationmodechanged'];
+                    'ratechange', 'seeked', 'timeupdate', 'webkitpresentationmodechanged', 'error'];
 
       function eligible(el) {
         // ignore muted decorative / preview videos unless they are already the active element
@@ -155,10 +155,22 @@ enum MediaScripts {
         return true;
       }
 
+      // Media failures never reach the UI otherwise; report them so the app can show/log the real cause.
+      function postError(el) {
+        var err = el.error || {};
+        var msg = {
+          type: 'mediaError', code: err.code || 0, message: String(err.message || '').slice(0, 200),
+          src: String(el.currentSrc || el.src || '').slice(0, 200),
+          networkState: el.networkState, readyState: el.readyState, host: location.hostname
+        };
+        try { window.webkit.messageHandlers.kvMedia.postMessage(msg); } catch (e) {}
+      }
+
       function onEvt(e) {
         var el = e.target;
         if (!isMedia(el)) { return; }
         var t = e.type;
+        if (t === 'error') { postError(el); return; }
         if (t === 'play' || t === 'playing') {
           if (!eligible(el)) { return; }
           kv.active = el;
@@ -198,6 +210,20 @@ enum MediaScripts {
           };
         }
       } catch (e) {}
+
+      // One-time capability report for the diagnostics screen (top frame only).
+      if (window === window.top) {
+        try {
+          var probe = document.createElement('video');
+          window.webkit.messageHandlers.kvMedia.postMessage({
+            type: 'diag', host: location.hostname,
+            mse: typeof window.MediaSource, mms: typeof window.ManagedMediaSource,
+            hls: probe.canPlayType('application/vnd.apple.mpegurl') || 'no',
+            mp4: probe.canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') || 'no',
+            webm: probe.canPlayType('video/webm; codecs="vp9"') || 'no'
+          });
+        } catch (e) {}
+      }
 
       // ---------------------------------------------------------------- 4. command API
       kv.cmd = function (name, arg) {

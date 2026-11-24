@@ -11,6 +11,9 @@ enum SettingsKey {
     static let resumeAfterInterruption = "bg.resumeAfterInterruption"
     // Picture in Picture
     static let autoPiP = "pip.auto"
+    // YouTube
+    static let ytHideChrome = "yt.hideChrome"
+    static let ytRecentSearches = "yt.recentSearches"
     // Lock screen
     static let lockScreenControls = "lock.enabled"
     static let skipInterval = "lock.skipInterval"
@@ -36,7 +39,9 @@ enum Prefs {
     static var autoResume: Bool { bool(SettingsKey.autoResume, true) }
     static var keepAlive: Bool { bool(SettingsKey.keepAlive, false) }
     static var resumeAfterInterruption: Bool { bool(SettingsKey.resumeAfterInterruption, true) }
-    static var autoPiP: Bool { bool(SettingsKey.autoPiP, true) }
+    /// Off by default: iOS only allows automatic PiP in limited situations, so the PiP button is the reliable way.
+    static var autoPiP: Bool { bool(SettingsKey.autoPiP, false) }
+    static var ytHideChrome: Bool { bool(SettingsKey.ytHideChrome, true) }
     static var lockScreenControls: Bool { bool(SettingsKey.lockScreenControls, true) }
     static var skipInterval: Double {
         let v = UserDefaults.standard.double(forKey: SettingsKey.skipInterval)

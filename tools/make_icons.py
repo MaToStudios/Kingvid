@@ -1,137 +1,155 @@
 #!/usr/bin/env python3
-"""Generates the KingVid app icon and launch crown artwork.
+"""Generates the KingVid app icon, launch crown and in-app crown logos (one per accent colour).
 
 Run from the repository root:  python3 tools/make_icons.py
-The crown geometry here mirrors `CrownShape` in KingVid/Design/CrownShape.swift.
+
+The in-app logo is a pre-rendered image (not SwiftUI shapes + blend modes) so it renders identically
+on every device: no overlays, masks or blend modes that could produce stray bars.
 """
 import json
 import os
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "KingVid", "Resources", "Assets.xcassets")
 SS = 3  # supersampling factor
 
+PALETTES = {
+    "Gold": [(0.0, (252, 238, 168)), (0.30, (233, 197, 82)), (0.55, (200, 154, 40)), (0.80, (150, 108, 22)), (1.0, (104, 72, 12))],
+    "Champagne": [(0.0, (255, 249, 232)), (0.30, (241, 222, 174)), (0.55, (222, 192, 134)), (0.80, (172, 142, 88)), (1.0, (122, 96, 52))],
+    "Rose": [(0.0, (253, 229, 217)), (0.30, (234, 182, 159)), (0.55, (215, 152, 128)), (0.80, (162, 108, 88)), (1.0, (114, 72, 58))],
+}
 
-def crown_mask(size, pad=0.0):
-    """Returns an 'L' mask (size x size, supersampled) of the crown silhouette, and the band mask."""
+
+def crown_masks(size):
+    """Body (polygon + jewels) and band masks, supersampled. The band is flush with the body base,
+    so the crown reads as one solid object rather than a crown sitting on a separate bar."""
     big = size * SS
     body = Image.new("L", (big, big), 0)
     d = ImageDraw.Draw(body)
-    box = 1.0 - 2 * pad
 
     def P(x, y):
-        return ((pad + x * box) * big, (pad + y * box * 0.80 + 0.10 * box) * big)
+        return (x * big, (0.10 + y * 0.80) * big)
 
-    pts = [(0.12, 0.80), (0.07, 0.30), (0.29, 0.54), (0.50, 0.12), (0.71, 0.54), (0.93, 0.30), (0.88, 0.80)]
+    pts = [(0.12, 0.81), (0.07, 0.30), (0.29, 0.54), (0.50, 0.12), (0.71, 0.54), (0.93, 0.30), (0.88, 0.81)]
     d.polygon([P(*p) for p in pts], fill=255)
     for cx, cy, r in [(0.07, 0.25, 0.055), (0.50, 0.075, 0.060), (0.93, 0.25, 0.055)]:
         x, y = P(cx, cy)
-        rr = r * box * big
+        rr = r * big
         d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=255)
+
     band = Image.new("L", (big, big), 0)
     bd = ImageDraw.Draw(band)
-    x0, y0 = P(0.14, 0.82)
-    x1, y1 = P(0.86, 0.97)
-    bd.rounded_rectangle([x0, y0, x1, y1], radius=(y1 - y0) / 2.2, fill=255)
-    return body, band
+    x0, y0 = P(0.12, 0.81)
+    x1, y1 = P(0.88, 0.97)
+    bd.rounded_rectangle([x0, y0, x1, y1], radius=(y1 - y0) * 0.35, fill=255)
+    # square off the top corners so the band joins the body flush
+    bd.rectangle([x0, y0, x1, y0 + (y1 - y0) * 0.45], fill=255)
+
+    seam = Image.new("L", (big, big), 0)
+    sd = ImageDraw.Draw(seam)
+    sx0, sy0 = P(0.12, 0.805)
+    sx1, sy1 = P(0.88, 0.822)
+    sd.rectangle([sx0, sy0, sx1, sy1], fill=255)
+    return body, band, seam
 
 
 def vertical_gradient(size, stops):
-    """stops: list of (t, (r,g,b))."""
-    h = size
-    ys = np.linspace(0, 1, h)
-    out = np.zeros((h, size, 3), dtype=np.float32)
+    ys = np.linspace(0, 1, size)
+    out = np.zeros((size, size, 3), dtype=np.float32)
     ts = [s[0] for s in stops]
     for c in range(3):
-        col = np.interp(ys, ts, [s[1][c] for s in stops])
-        out[:, :, c] = col[:, None]
+        out[:, :, c] = np.interp(ys, ts, [s[1][c] for s in stops])[:, None]
     return Image.fromarray(out.astype(np.uint8), "RGB")
 
 
-GOLD = [(0.0, (252, 238, 168)), (0.30, (233, 197, 82)), (0.55, (200, 154, 40)), (0.80, (150, 108, 22)), (1.0, (104, 72, 12))]
-GOLD_BAND = [(0.0, (245, 220, 120)), (0.5, (190, 144, 36)), (1.0, (118, 82, 14))]
-
-
-def crown_image(size, pad=0.0, gems=True):
-    """RGBA crown on transparent background."""
+def crown_image(size, palette="Gold"):
+    """RGBA crown on a transparent background (no padding artefacts, nothing outside the silhouette)."""
+    stops = PALETTES[palette]
     big = size * SS
-    body, band = crown_mask(size, pad)
-    gold = vertical_gradient(big, GOLD)
-    gold_band = vertical_gradient(big, GOLD_BAND)
+    body, band, seam = crown_masks(size)
+    gold = vertical_gradient(big, stops)
+    band_stops = [(0.0, stops[1][1]), (0.5, stops[2][1]), (1.0, stops[4][1])]
+    gold_band = vertical_gradient(big, band_stops)
+
     img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
     img.paste(gold, (0, 0), body)
-    # darker separation line between body and band
-    sep = band.filter(ImageFilter.MaxFilter(SS * 4 + 1))
-    sep_edge = Image.new("L", (big, big), 0)
-    sep_edge.paste(sep, (0, 0))
-    dark = Image.new("RGBA", (big, big), (40, 28, 4, 255))
-    img.paste(dark, (0, 0), ImageChops_subtract(sep_edge, band))
     img.paste(gold_band, (0, 0), band)
-    # specular highlight: thin light edge along the top of the body
-    hi = body.filter(ImageFilter.GaussianBlur(SS * 2))
-    hi_arr = np.asarray(hi, dtype=np.float32) / 255.0
-    body_arr = np.asarray(body, dtype=np.float32) / 255.0
-    edge = np.clip(body_arr - hi_arr, 0, 1) * 1.8
+    dark = Image.new("RGBA", (big, big), tuple(stops[4][1]) + (255,))
+    img.paste(dark, (0, 0), ImageChops.multiply(seam, ImageChops.lighter(body, band)))
+
+    # thin specular edge along the silhouette top
+    union = ImageChops.lighter(body, band)
+    blur = union.filter(ImageFilter.GaussianBlur(SS * 2))
+    edge = np.clip(np.asarray(union, dtype=np.float32) / 255.0 - np.asarray(blur, dtype=np.float32) / 255.0, 0, 1) * 1.6
     glow = np.zeros((big, big, 4), dtype=np.uint8)
-    glow[:, :, 0] = 255
-    glow[:, :, 1] = 246
-    glow[:, :, 2] = 200
+    glow[:, :, 0], glow[:, :, 1], glow[:, :, 2] = 255, 246, 205
     glow[:, :, 3] = np.clip(edge * 255, 0, 255).astype(np.uint8)
     img = Image.alpha_composite(img, Image.fromarray(glow, "RGBA"))
-    if gems:
-        d = ImageDraw.Draw(img)
-        box = 1.0 - 2 * pad
-        for gx in (0.29, 0.50, 0.71):
-            cx = (pad + gx * box) * big
-            cy = (pad + 0.895 * box * 0.80 + 0.10 * box) * big
-            r = 0.028 * box * big
-            d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(30, 20, 4, 255))
-            r2 = r * 0.45
-            d.ellipse([cx - r2 - r * 0.15, cy - r2 - r * 0.2, cx + r2 - r * 0.15, cy + r2 - r * 0.2], fill=(255, 236, 160, 200))
+
+    # gems on the band
+    d = ImageDraw.Draw(img)
+    for gx in (0.29, 0.50, 0.71):
+        cx = gx * big
+        cy = (0.10 + 0.895 * 0.80) * big
+        r = 0.026 * big
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(30, 20, 4, 255))
+        r2 = r * 0.42
+        d.ellipse([cx - r2 - r * 0.15, cy - r2 - r * 0.2, cx + r2 - r * 0.15, cy + r2 - r * 0.2], fill=(255, 236, 160, 210))
     return img.resize((size, size), Image.LANCZOS)
 
 
-def ImageChops_subtract(a, b):
-    from PIL import ImageChops
-    return ImageChops.subtract(a, b)
+def crop_to_content(img, pad_ratio=0.0):
+    """Crop transparent margins so the logo is optically centred when used with scaledToFit."""
+    bbox = img.getbbox()
+    if not bbox:
+        return img
+    cropped = img.crop(bbox)
+    w, h = cropped.size
+    side = max(w, h)
+    canvas = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    canvas.paste(cropped, ((side - w) // 2, (side - h) // 2))
+    return canvas
 
 
 def make_app_icon(path, size=1024):
-    # dark graphite radial background
     yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
-    cx = cy = size / 2
-    r = np.sqrt((xx - cx) ** 2 + (yy - cy * 0.85) ** 2) / (size * 0.75)
-    r = np.clip(r, 0, 1)
+    r = np.clip(np.sqrt((xx - size / 2) ** 2 + (yy - size * 0.42) ** 2) / (size * 0.75), 0, 1)
     inner = np.array([34, 35, 38], dtype=np.float32)
     outer = np.array([4, 4, 5], dtype=np.float32)
     bg = inner[None, None, :] * (1 - r[:, :, None]) + outer[None, None, :] * r[:, :, None]
     base = Image.fromarray(bg.astype(np.uint8), "RGB").convert("RGBA")
 
-    # gold ring
-    ring = Image.new("RGBA", (size * SS, size * SS), (0, 0, 0, 0))
-    rd = ImageDraw.Draw(ring)
-    m = int(size * 0.045 * SS)
-    rd.rounded_rectangle([m, m, size * SS - m, size * SS - m], radius=int(size * 0.2 * SS), outline=(212, 175, 55, 90), width=int(size * 0.004 * SS))
-    base = Image.alpha_composite(base, ring.resize((size, size), Image.LANCZOS))
+    crown = crop_to_content(crown_image(1600, "Gold"))
+    target = int(size * 0.62)
+    crown = crown.resize((target, target), Image.LANCZOS)
+    ox = (size - crown.width) // 2
+    oy = (size - crown.height) // 2
 
-    crown = crown_image(int(size * 0.66), 0.0)
-    # soft shadow
     shadow = Image.new("RGBA", crown.size, (0, 0, 0, 0))
     shadow.putalpha(crown.split()[3].point(lambda v: int(v * 0.55)))
     shadow = shadow.filter(ImageFilter.GaussianBlur(size * 0.02))
-    ox = (size - crown.width) // 2
-    oy = int(size * 0.17)
     base.alpha_composite(shadow, (ox, oy + int(size * 0.018)))
-    # glow
     glow = Image.new("RGBA", crown.size, (0, 0, 0, 0))
-    g = Image.new("RGBA", crown.size, (230, 180, 60, 255))
-    glow.paste(g, (0, 0), crown.split()[3].point(lambda v: int(v * 0.35)))
+    glow.paste(Image.new("RGBA", crown.size, (230, 180, 60, 255)), (0, 0), crown.split()[3].point(lambda v: int(v * 0.30)))
     glow = glow.filter(ImageFilter.GaussianBlur(size * 0.035))
     base.alpha_composite(glow, (ox, oy))
     base.alpha_composite(crown, (ox, oy))
     base.convert("RGB").save(path, "PNG")
+
+
+def write_imageset(name, palette, sizes):
+    folder = os.path.join(ROOT, name + ".imageset")
+    os.makedirs(folder, exist_ok=True)
+    big = crop_to_content(crown_image(1200, palette))
+    images = []
+    for scale, px in sizes:
+        fname = name + (".png" if scale == 1 else "@%dx.png" % scale)
+        big.resize((px, px), Image.LANCZOS).save(os.path.join(folder, fname))
+        images.append({"filename": fname, "idiom": "universal", "scale": "%dx" % scale})
+    with open(os.path.join(folder, "Contents.json"), "w") as f:
+        json.dump({"images": images, "info": {"author": "xcode", "version": 1}}, f, indent=2)
 
 
 def main():
@@ -141,14 +159,11 @@ def main():
         json.dump({"images": [{"filename": "icon-1024.png", "idiom": "universal", "platform": "ios", "size": "1024x1024"}],
                    "info": {"author": "xcode", "version": 1}}, f, indent=2)
 
-    launch_dir = os.path.join(ROOT, "LaunchCrown.imageset")
-    images = []
-    for scale, px in ((1, 150), (2, 300), (3, 450)):
-        name = "LaunchCrown.png" if scale == 1 else "LaunchCrown@%dx.png" % scale
-        crown_image(px, 0.0).save(os.path.join(launch_dir, name))
-        images.append({"filename": name, "idiom": "universal", "scale": "%dx" % scale})
-    with open(os.path.join(launch_dir, "Contents.json"), "w") as f:
-        json.dump({"images": images, "info": {"author": "xcode", "version": 1}}, f, indent=2)
+    # Launch screen crown + the three in-app logos (square, content-cropped, transparent)
+    write_imageset("LaunchCrown", "Gold", [(1, 150), (2, 300), (3, 450)])
+    write_imageset("CrownGold", "Gold", [(1, 140), (2, 280), (3, 420)])
+    write_imageset("CrownChampagne", "Champagne", [(1, 140), (2, 280), (3, 420)])
+    write_imageset("CrownRose", "Rose", [(1, 140), (2, 280), (3, 420)])
 
     def color_set(folder, rgb):
         r, g, b = rgb

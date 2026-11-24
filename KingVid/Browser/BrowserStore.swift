@@ -5,11 +5,10 @@ import WebKit
 final class BrowserStore: ObservableObject {
     @Published private(set) var tabs: [BrowserTab] = []
     @Published private(set) var selectedID: UUID?
-    /// The tab that currently owns the media session. Its web view stays attached while hidden.
-    @Published var mediaTabID: UUID?
-
     let media: MediaCenter
     let library: LibraryStore
+    /// Web views owned by other features (the YouTube experience) that must receive script updates too.
+    var extraTabs: () -> [BrowserTab] = { [] }
 
     private let sessionKey = "session.tabs.v1"
     private var scriptSignature = WebViewFactory.scriptSignature
@@ -134,10 +133,10 @@ final class BrowserStore: ObservableObject {
         let signature = WebViewFactory.scriptSignature
         guard signature != scriptSignature else { return }
         scriptSignature = signature
-        for tab in tabs {
+        for tab in tabs + extraTabs() {
             let controller = tab.webView.configuration.userContentController
             controller.removeAllUserScripts()
-            controller.addUserScript(WebViewFactory.userScript())
+            for script in WebViewFactory.userScripts(kind: tab.kind) { controller.addUserScript(script) }
         }
     }
 }

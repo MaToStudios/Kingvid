@@ -177,6 +177,7 @@ struct PlayerSheet: View {
 
             Button {
                 browser.showTab(withID: s.tabID)
+                app.section = .browser
                 app.sheet = nil
             } label: {
                 pillLabel("safari", "Page")

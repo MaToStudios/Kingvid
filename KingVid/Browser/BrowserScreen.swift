@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// The main browsing screen: address bar, page area, mini-player and dock.
+/// The Browser section: address bar and page area. (Navigation between sections lives in `AppTabBar`,
+/// and the mini-player is global, so neither is repeated here.)
 struct BrowserScreen: View {
     @ObservedObject var tab: BrowserTab
+    @ObservedObject var ownership: MediaOwnership
     @EnvironmentObject var browser: BrowserStore
 
     @State private var isEditing = false
@@ -23,9 +25,6 @@ struct BrowserScreen: View {
                 }
             }
             .animation(.easeOut(duration: 0.15), value: isEditing)
-
-            MiniPlayerView()
-            DockBar(tab: tab)
         }
         .background(Theme.background.ignoresSafeArea())
     }
@@ -34,7 +33,7 @@ struct BrowserScreen: View {
     /// so its player keeps running while you browse elsewhere).
     private var pages: some View {
         ZStack {
-            ForEach(browser.tabs.filter { $0.id == tab.id || $0.id == browser.mediaTabID }) { t in
+            ForEach(browser.tabs.filter { $0.id == tab.id || $0.id == ownership.tabID }) { t in
                 TabPage(tab: t)
                     .opacity(t.id == tab.id ? 1 : 0)
                     .allowsHitTesting(t.id == tab.id)
