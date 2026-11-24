@@ -35,7 +35,7 @@ jobs:
 
       - name: Build (unsigned, for Sideloadly re-signing)
         run: |
-          set -o pipefail
+          set +e
           xcodebuild \
             -project KingVid.xcodeproj \
             -scheme KingVid \
@@ -47,8 +47,19 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             DEVELOPMENT_TEAM="" \
-            build 2>&1 | tee build.log | grep -E "error:|warning: unre|BUILD|\*\* " || true
-          test -d build/Build/Products/Release-iphoneos/KingVid.app
+            build > build.log 2>&1
+          status=$?
+          set -e
+          echo "xcodebuild exit status: $status"
+          grep -E "error:|BUILD (SUCCEEDED|FAILED)" build.log | head -60 || true
+          if [ "$status" -ne 0 ]; then
+            echo "::error::xcodebuild failed (see errors above)"
+            exit 1
+          fi
+          APP=build/Build/Products/Release-iphoneos/KingVid.app
+          test -d "$APP"
+          test -x "$APP/KingVid" || { echo "::error::App bundle has no executable"; exit 1; }
+          ls -l "$APP/KingVid"
 
       - name: Upload build log
         if: always()
@@ -66,6 +77,7 @@ jobs:
           zip -qry KingVid.ipa Payload
           ls -lh KingVid.ipa
           unzip -l KingVid.ipa | head -20
+          unzip -l KingVid.ipa | grep -q "Payload/KingVid.app/KingVid$" || { echo "::error::IPA has no executable"; exit 1; }
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4

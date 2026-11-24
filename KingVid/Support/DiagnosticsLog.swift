@@ -43,7 +43,7 @@ final class DiagnosticsLog: ObservableObject {
         lines.append("Audio session: \(Self.audioSessionSummary())")
         lines.append("Settings: bg=\(Prefs.backgroundPlayback) spoofVisibility=\(Prefs.spoofVisibility) autoResume=\(Prefs.autoResume) keepAlive=\(Prefs.keepAlive) autoPiP=\(Prefs.autoPiP) lockScreen=\(Prefs.lockScreenControls) ytHideChrome=\(Prefs.ytHideChrome)")
         lines.append("Browser tabs: \(tabs)")
-        if let s {
+        if let s = session {
             lines.append("Media session: playing=\(s.isPlaying) video=\(s.isVideo) live=\(s.isLive) pip=\(s.pipActive) pos=\(Int(s.position))/\(Int(s.duration)) host=\(s.host) title=\(s.title)")
         } else {
             lines.append("Media session: none")
