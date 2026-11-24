@@ -1,0 +1,85 @@
+name: Build KingVid IPA
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore:
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build (unsigned, for Sideloadly re-signing)
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project KingVid.xcodeproj \
+            -scheme KingVid \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM="" \
+            build 2>&1 | tee build.log | grep -E "error:|warning: unre|BUILD|\*\* " || true
+          test -d build/Build/Products/Release-iphoneos/KingVid.app
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
+
+      - name: Package IPA
+        run: |
+          rm -rf Payload KingVid.ipa
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/KingVid.app Payload/
+          zip -qry KingVid.ipa Payload
+          ls -lh KingVid.ipa
+          unzip -l KingVid.ipa | head -20
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: KingVid-ipa
+          path: KingVid.ipa
+
+      - name: Publish release with IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="build-${{ github.run_number }}"
+          gh release create "$TAG" KingVid.ipa \
+            --target "${{ github.sha }}" \
+            --title "KingVid build ${{ github.run_number }}" \
+            --notes "Unsigned IPA for Sideloadly. Commit ${{ github.sha }}." \
+            --latest
