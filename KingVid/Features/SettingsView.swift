@@ -8,7 +8,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.backgroundPlayback) private var backgroundPlayback = true
     @AppStorage(SettingsKey.spoofVisibility) private var spoofVisibility = true
     @AppStorage(SettingsKey.autoResume) private var autoResume = true
-    @AppStorage(SettingsKey.keepAlive) private var keepAlive = false
+    @AppStorage(SettingsKey.keepAlive) private var keepAlive = true
     @AppStorage(SettingsKey.resumeAfterInterruption) private var resumeAfterInterruption = true
     // PiP
     @AppStorage(SettingsKey.autoPiP) private var autoPiP = false
@@ -86,11 +86,11 @@ struct SettingsView: View {
             Toggle("Keep sites playing when hidden", isOn: $spoofVisibility)
             Toggle("Auto-resume if paused in background", isOn: $autoResume)
             Toggle("Resume after calls & interruptions", isOn: $resumeAfterInterruption)
-            Toggle("Silent keep-alive audio", isOn: $keepAlive)
+            Toggle("Keep app awake while playing", isOn: $keepAlive)
         } header: {
             SectionLabel("Background Playback")
         } footer: {
-            Text("“Keep sites playing when hidden” stops sites like YouTube from pausing when you lock the screen or switch apps. Turn on silent keep-alive audio only if playback stops after a while.")
+            Text("“Keep sites playing when hidden” stops sites like YouTube from pausing when you lock the screen or switch apps. “Keep app awake” plays mixable silence while a video plays so Lock Screen controls keep working; it never interrupts the video.")
         }
         .rowStyle()
     }

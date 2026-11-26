@@ -69,6 +69,10 @@ final class SilentKeepAlive {
     private var player: AVAudioPlayer?
 
     func start() {
+        // Mixable, so starting this can never interrupt WebKit's own (non-mixable) media session.
+        let audio = AVAudioSession.sharedInstance()
+        try? audio.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try? audio.setActive(true)
         if player == nil {
             player = try? AVAudioPlayer(data: Self.silentWAV(seconds: 1))
             player?.numberOfLoops = -1

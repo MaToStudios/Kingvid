@@ -235,9 +235,8 @@ enum MediaScripts {
           case 'pause':
             kv.userPause = true; kv.wasPlaying = false; kv.lastUser = Date.now();
             try { el.pause(); } catch (e) {} break;
-          case 'interrupt':   // system interruption (call, Siri): pause and don't auto-resume
-            kv.userPause = true; kv.lastUser = Date.now();
-            try { el.pause(); } catch (e) {} break;
+          case 'hold':        // audio interruption (call, Siri): WebKit pauses by itself; we only stop auto-resume
+            kv.userPause = true; kv.lastUser = Date.now(); break;
           case 'seek':
             try { el.currentTime = Math.max(0, arg); } catch (e) {} break;
           case 'skip':

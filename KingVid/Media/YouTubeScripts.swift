@@ -74,18 +74,25 @@ enum YouTubeScripts {
 
       // ---------------------------------------------------------------- player role
       if (cfg.role === 'player') {
-        var touched = false;
+        // Autoplay helper: only until the video has actually started once, the user touches the page,
+        // or the user paused from KingVid's native controls. It must never fight a deliberate pause.
+        var stopped = false;
+        function stopHelper() { stopped = true; }
         ['touchstart', 'pointerdown', 'mousedown'].forEach(function (n) {
-          document.addEventListener(n, function () { touched = true; }, true);
+          document.addEventListener(n, stopHelper, true);
         });
+        document.addEventListener('playing', function (e) {
+          if (e.target && e.target.tagName === 'VIDEO') { stopHelper(); }
+        }, true);
         var tries = 0;
         var iv = setInterval(function () {
           tries++;
+          var userPaused = window.__kv && window.__kv.userPause;
           var v = document.querySelector('video');
-          if (v && v.paused && !v.ended && !touched && v.readyState >= 2) {
+          if (!stopped && !userPaused && v && v.paused && !v.ended && v.readyState >= 2) {
             try { var p = v.play(); if (p && p.catch) { p.catch(function () {}); } } catch (err) {}
           }
-          if (tries > 24 || touched) { clearInterval(iv); }
+          if (tries > 24 || stopped || userPaused) { clearInterval(iv); }
         }, 500);
       }
     })();

@@ -227,7 +227,6 @@ final class MediaCenter: ObservableObject {
         keepAlive.stop()
         keepAliveStopTask?.cancel()
         updateNowPlaying()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func send(_ command: String, _ argument: Double? = nil) {
@@ -238,28 +237,27 @@ final class MediaCenter: ObservableObject {
     }
 
     // MARK: - Audio session
+    //
+    // IMPORTANT: WebKit plays page media from its own process with its OWN audio session. If the app
+    // activates a non-mixable session while a page is playing, that interrupts WebKit's session and WebKit
+    // pauses the video (the "plays for half a second, then stops" bug in builds 1-3). So the app's session
+    // is always `.mixWithOthers` and is only ever activated by the silent keep-alive player, which therefore
+    // can never interrupt the page. WebKit manages its own session for the actual playback.
 
     private func configureAudioSessionCategory() {
-        let audio = AVAudioSession.sharedInstance()
-        try? audio.setCategory(.playback, mode: .moviePlayback, options: [])
-    }
-
-    private func activateAudioSession() {
-        let audio = AVAudioSession.sharedInstance()
-        try? audio.setCategory(.playback, mode: .moviePlayback, options: [])
-        try? audio.setActive(true)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
     }
 
     private func playbackStateChanged(wasPlaying: Bool, session: MediaSession) {
         if session.isPlaying {
             keepAliveStopTask?.cancel()
-            if !wasPlaying { activateAudioSession() }
+            // Keeps the app process (Lock Screen commands, Now Playing updates) alive in the background.
             if Prefs.keepAlive { keepAlive.start() }
         } else if wasPlaying {
-            // Give the user two minutes to resume from the Lock Screen before releasing the process.
+            // Give the user a few minutes to resume from the Lock Screen before releasing the process.
             keepAliveStopTask?.cancel()
             keepAliveStopTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 120_000_000_000)
+                try? await Task.sleep(nanoseconds: 300_000_000_000)
                 guard !Task.isCancelled else { return }
                 self?.keepAlive.stop()
             }
@@ -387,7 +385,6 @@ final class MediaCenter: ObservableObject {
             return
         }
         if s.isPlaying {
-            activateAudioSession()
             if Prefs.keepAlive { keepAlive.start() }
             beginBackgroundTask()
         }
@@ -428,14 +425,16 @@ final class MediaCenter: ObservableObject {
     }
 
     private func handleInterruption(typeRaw: UInt, optionsRaw: UInt) {
-        guard let type = AVAudioSession.InterruptionType(rawValue: typeRaw), session != nil else { return }
+        guard let type = AVAudioSession.InterruptionType(rawValue: typeRaw) else { return }
+        let options = AVAudioSession.InterruptionOptions(rawValue: optionsRaw)
+        DiagnosticsLog.shared.add("audio", "interruption \(type == .began ? "began" : "ended")\(options.contains(.shouldResume) ? " (should resume)" : "")")
+        guard session != nil else { return }
         switch type {
         case .began:
-            send("interrupt")
+            // Only stop the background auto-resume from fighting a phone call; do NOT pause the page here.
+            send("hold")
         case .ended:
-            let options = AVAudioSession.InterruptionOptions(rawValue: optionsRaw)
             if options.contains(.shouldResume), Prefs.resumeAfterInterruption {
-                activateAudioSession()
                 play()
             }
         @unknown default:
@@ -444,8 +443,10 @@ final class MediaCenter: ObservableObject {
     }
 
     private func handleRouteChange(reasonRaw: UInt) {
+        let reason = AVAudioSession.RouteChangeReason(rawValue: reasonRaw)
+        DiagnosticsLog.shared.add("audio", "route change reason=\(reasonRaw)")
         // Headphones unplugged / Bluetooth disconnected: pause, like every media app.
-        if AVAudioSession.RouteChangeReason(rawValue: reasonRaw) == .oldDeviceUnavailable, session?.isPlaying == true {
+        if reason == .oldDeviceUnavailable, session?.isPlaying == true {
             pause()
         }
     }

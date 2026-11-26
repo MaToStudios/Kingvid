@@ -37,7 +37,7 @@ enum Prefs {
     static var backgroundPlayback: Bool { bool(SettingsKey.backgroundPlayback, true) }
     static var spoofVisibility: Bool { bool(SettingsKey.spoofVisibility, true) }
     static var autoResume: Bool { bool(SettingsKey.autoResume, true) }
-    static var keepAlive: Bool { bool(SettingsKey.keepAlive, false) }
+    static var keepAlive: Bool { bool(SettingsKey.keepAlive, true) }
     static var resumeAfterInterruption: Bool { bool(SettingsKey.resumeAfterInterruption, true) }
     /// Off by default: iOS only allows automatic PiP in limited situations, so the PiP button is the reliable way.
     static var autoPiP: Bool { bool(SettingsKey.autoPiP, false) }
