@@ -6,7 +6,7 @@ Black / graphite UI with metallic gold accents and a crown logo.
 ## Install on iPhone (no Mac, free Apple ID, Sideloadly)
 
 1. Download the latest IPA: <https://github.com/MaToStudios/Kingvid/releases/latest> (`KingVid.ipa`).
-   Direct link for build 3: <https://github.com/MaToStudios/Kingvid/releases/download/build-3/KingVid.ipa>
+   Direct link for build 4: <https://github.com/MaToStudios/Kingvid/releases/download/build-4/KingVid.ipa>
    (Release `build-2` is a broken build with no executable; ignore it.)
 2. Install [Sideloadly](https://sideloadly.io) on your Windows PC (also install iTunes and iCloud from
    apple.com, *not* the Microsoft Store versions, if Sideloadly asks for them).
