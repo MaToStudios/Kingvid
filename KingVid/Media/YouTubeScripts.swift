@@ -74,6 +74,71 @@ enum YouTubeScripts {
 
       // ---------------------------------------------------------------- player role
       if (cfg.role === 'player') {
+        // ---- Video-only layout. KingVid draws the watch screen natively (details, up next) and one control
+        // overlay, so this web view shows nothing but the real YouTube video, filling the view edge to edge.
+        // Selectors match m.youtube.com's real structure: body > #player-container-id > #player > #movie_player
+        // > .html5-video-container > video.html5-main-video.
+        var vcss = 'html,body{background:#000!important;overflow:hidden!important;margin:0!important}' +
+          'body>*:not(#player-container-id){visibility:hidden!important}' +
+          '#player-container-id{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;' +
+            'width:100vw!important;height:100vh!important;max-height:none!important;margin:0!important;padding:0!important;' +
+            'z-index:2147483000!important;background:#000!important;transform:none!important;visibility:visible!important}' +
+          '#player-container-id #player,#player-container-id #movie_player,#player-container-id .html5-video-container{' +
+            'position:absolute!important;top:0!important;left:0!important;width:100%!important;height:100%!important;' +
+            'padding:0!important;margin:0!important;transform:none!important;max-height:none!important}' +
+          '#player-container-id video{position:absolute!important;top:0!important;left:0!important;width:100%!important;' +
+            'height:100%!important;object-fit:contain!important;background:#000!important;transform:none!important}' +
+          // YouTube's own control layer: KingVid's single native overlay replaces it (no competing controls).
+          'ytm-watch-player-controls,ytm-custom-control,.player-controls-content,.player-controls-background,' +
+          '.player-controls-top,.player-controls-middle,.player-controls-bottom,.ytp-chrome-bottom,.ytp-chrome-top,' +
+          '.ytp-gradient-bottom,.ytp-gradient-top,.ytp-large-play-button,.ytp-pause-overlay,.ytp-ce-element,' +
+          '.ytp-cards-teaser,.ytp-paid-content-overlay,.ytp-endscreen-content,.ytp-autonav-endscreen-countdown-overlay,' +
+          '.ytp-unmute,.ytm-autonav-bar{display:none!important}';
+        (function injectVideoOnly() {
+          if (document.getElementById('kv-yt-video')) { return; }
+          var root = document.head || document.documentElement;
+          if (!root) { return; }
+          var st = document.createElement('style');
+          st.id = 'kv-yt-video';
+          st.textContent = vcss;
+          root.appendChild(st);
+        })();
+        document.addEventListener('DOMContentLoaded', function () {
+          if (!document.getElementById('kv-yt-video')) {
+            var st = document.createElement('style'); st.id = 'kv-yt-video'; st.textContent = vcss;
+            (document.head || document.documentElement).appendChild(st);
+          }
+        });
+
+        // ---- Page data for the native watch screen (title, channel, description, up next).
+        function currentVideoId() {
+          var m = /[?&]v=([\w-]{6,})/.exec(location.search);
+          if (m) { return m[1]; }
+          m = /^\/(shorts|live)\/([\w-]{6,})/.exec(location.pathname);
+          return m ? m[2] : null;
+        }
+        var postedFor = null;
+        function postWatchData() {
+          var id = currentVideoId();
+          if (!id || postedFor === id) { return; }
+          var pr = window.ytInitialPlayerResponse;
+          var vd = pr && pr.videoDetails;
+          // After in-page navigation the embedded data is stale; native code fetches it instead.
+          if (!vd || vd.videoId !== id) { return; }
+          postedFor = id;
+          var initial = null;
+          try { initial = JSON.stringify(window.ytInitialData || null); } catch (err) {}
+          post({
+            type: 'watchData', videoId: id,
+            playerResponse: JSON.stringify({ videoDetails: pr.videoDetails, microformat: pr.microformat }),
+            initialData: initial
+          });
+        }
+        document.addEventListener('DOMContentLoaded', postWatchData);
+        window.addEventListener('load', postWatchData);
+        var dataTries = 0;
+        var dataTimer = setInterval(function () { postWatchData(); if (++dataTries > 20) { clearInterval(dataTimer); } }, 1000);
+
         // Autoplay helper: only until the video has actually started once, the user touches the page,
         // or the user paused from KingVid's native controls. It must never fight a deliberate pause.
         var stopped = false;

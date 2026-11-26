@@ -154,9 +154,11 @@ struct ArtworkView: View {
 }
 
 struct AirPlayPicker: UIViewRepresentable {
+    var tint: Color? = nil
+
     func makeUIView(context: Context) -> AVRoutePickerView {
         let v = AVRoutePickerView()
-        v.tintColor = UIColor(Theme.gold)
+        v.tintColor = UIColor(tint ?? Theme.gold)
         v.activeTintColor = UIColor(Theme.goldLight)
         v.prioritizesVideoDevices = true
         return v

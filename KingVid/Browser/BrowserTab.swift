@@ -21,6 +21,8 @@ final class BrowserTab: NSObject, ObservableObject, Identifiable {
     var onWatchRequest: ((URL) -> Void)?
     var onOpenExternal: ((URL) -> Void)?
     var onURLChange: ((URL?) -> Void)?
+    /// Page data posted by the YouTube player view (`watchData`).
+    var onWatchData: (([String: Any]) -> Void)?
 
     @Published var title = ""
     @Published var url: URL?
@@ -351,9 +353,15 @@ extension BrowserTab: WKScriptMessageHandler {
         guard let body = message.body as? [String: Any] else { return }
         switch message.name {
         case "kvNav":
-            if (body["type"] as? String) == "watch",
-               let string = body["url"] as? String, let url = URL(string: string) {
-                onWatchRequest?(url)
+            switch body["type"] as? String {
+            case "watch":
+                if let string = body["url"] as? String, let url = URL(string: string) {
+                    onWatchRequest?(url)
+                }
+            case "watchData":
+                onWatchData?(body)
+            default:
+                break
             }
         default:
             store?.media.handle(body, from: self, frame: message.frameInfo)

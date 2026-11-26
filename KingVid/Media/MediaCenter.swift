@@ -21,6 +21,11 @@ struct MediaSession: Equatable {
     var pipActive: Bool
     var hasNext: Bool
     var hasPrevious: Bool
+    var isMuted: Bool = false
+    /// Width / height of the actual video frames (0 when unknown).
+    var aspectRatio: Double = 0
+    var isAd: Bool = false
+    var canSkipAd: Bool = false
 }
 
 /// Which tab currently owns the media session. Separate from `MediaCenter` so views that only need the
@@ -123,7 +128,11 @@ final class MediaCenter: ObservableObject {
             isLive: (body["live"] as? Bool) ?? false,
             pipActive: (body["pip"] as? Bool) ?? false,
             hasNext: (body["hasNext"] as? Bool) ?? false,
-            hasPrevious: (body["hasPrev"] as? Bool) ?? false
+            hasPrevious: (body["hasPrev"] as? Bool) ?? false,
+            isMuted: (body["muted"] as? Bool) ?? false,
+            aspectRatio: number("vh") > 0 ? number("vw") / number("vh") : 0,
+            isAd: (body["ad"] as? Bool) ?? false,
+            canSkipAd: (body["adSkip"] as? Bool) ?? false
         )
 
         let previous = session
@@ -200,6 +209,10 @@ final class MediaCenter: ObservableObject {
     func setRate(_ rate: Double) { send("rate", rate) }
     func togglePiP() { send("pip") }
     func next() { send("next") }
+    func unmute() { send("unmute") }
+    func skipAd() { send("skipAd") }
+    /// iOS's own fullscreen video player (used for non-YouTube pages).
+    func nativeFullscreen() { send("fullscreen") }
     func previous() { send("prev") }
 
     /// Stops playback and dismisses the mini-player.

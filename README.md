@@ -6,7 +6,7 @@ Black / graphite UI with metallic gold accents and a crown logo.
 ## Install on iPhone (no Mac, free Apple ID, Sideloadly)
 
 1. Download the latest IPA: <https://github.com/MaToStudios/Kingvid/releases/latest> (`KingVid.ipa`).
-   Direct link for build 4: <https://github.com/MaToStudios/Kingvid/releases/download/build-4/KingVid.ipa>
+   Direct link for build 5: <https://github.com/MaToStudios/Kingvid/releases/download/build-5/KingVid.ipa>
    (Release `build-2` is a broken build with no executable; ignore it.)
 2. Install [Sideloadly](https://sideloadly.io) on your Windows PC (also install iTunes and iCloud from
    apple.com, *not* the Microsoft Store versions, if Sideloadly asks for them).
@@ -21,9 +21,24 @@ Free Apple IDs expire apps after **7 days** and allow 3 sideloaded apps at once;
 
 ## What's in the app
 
-Home (search, YouTube card, recents, quick access) · YouTube (native search with suggestions, route chips, watch screen
-with native controls, mini-player; the real YouTube player and site keep working) · Browser (tabs, history, bookmarks) ·
-Library · Settings. Settings > Troubleshooting > Playback diagnostics has a test page (MP4, HLS, MP3) and a copyable report.
+Home (search, YouTube card, recents, quick access) · YouTube · Browser (tabs, history, bookmarks) · Library · Settings.
+Settings > Troubleshooting > Playback diagnostics has a test page (MP4, HLS, MP3) and a copyable report.
+
+### YouTube
+
+- **Feed (native):** categories and search results built from YouTube's own page data (`YouTube/YouTubeData.swift`,
+  `YouTubeService.swift`), thumbnail-first cards, Shorts shelf, continue watching. Account pages (subscriptions,
+  library, playlists, channels, sign-in) open the real YouTube site.
+- **Watch screen:** the original YouTube player runs in a dedicated web view that the player script reduces to
+  *only the video* (`Media/YouTubeScripts.swift`); the video fills a full-width area sized to its real aspect
+  ratio. KingVid draws one auto-hiding control overlay on top (no second control set). Details, actions and
+  Up next are native below. Fullscreen rotates to landscape with the same controls.
+
+## Tests
+
+- `tools/js-tests/run.sh` – injected page scripts (background playback bridge, YouTube interception,
+  video-only layout, ad/mute handling) in headless Chromium.
+- `tools/youtube-parser-test/run.sh` – parser against a freshly downloaded YouTube results page.
 
 ## How the build works
 

@@ -100,6 +100,17 @@ enum MediaScripts {
         return '';
       }
 
+      // YouTube ads play in the same <video>; the player gets an 'ad-showing' class and a skip button.
+      function skipButton() {
+        var b = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-skip-button-slot button, button[class*="skip-ad"]');
+        return b && b.offsetParent !== null ? b : null;
+      }
+      function adState(el) {
+        var host = el.closest ? el.closest('.html5-video-player') : null;
+        var ad = !!(host && (host.classList.contains('ad-showing') || host.classList.contains('ad-interrupting')));
+        return { ad: ad, skippable: ad && !!skipButton() };
+      }
+
       // ---------------------------------------------------------------- 3. state bridge
       function post(el, force) {
         if (!el) { return; }
@@ -121,6 +132,11 @@ enum MediaScripts {
           artwork: bestArtwork(),
           isVideo: el.tagName === 'VIDEO' && el.videoWidth > 0,
           pip: el.webkitPresentationMode === 'picture-in-picture',
+          muted: !!el.muted || el.volume === 0,
+          vw: el.videoWidth || 0,
+          vh: el.videoHeight || 0,
+          ad: adState(el).ad,
+          adSkip: adState(el).skippable,
           hasNext: !!kv.handlers.nexttrack,
           hasPrev: !!kv.handlers.previoustrack,
           url: location.href,
@@ -151,6 +167,7 @@ enum MediaScripts {
       function eligible(el) {
         // ignore muted decorative / preview videos unless they are already the active element
         if (el === kv.active) { return true; }
+        if (window.__KV_YT && window.__KV_YT.role === 'player') { return true; }
         if (el.muted || el.volume === 0) { return false; }
         return true;
       }
@@ -256,6 +273,12 @@ enum MediaScripts {
                 if (want !== inPip) { el.webkitSetPresentationMode(want ? 'picture-in-picture' : 'inline'); }
               }
             } catch (e) {} break;
+          case 'unmute':
+            try { el.muted = false; if (el.volume === 0) { el.volume = 1; } } catch (e) {} break;
+          case 'fullscreen':
+            try { if (el.webkitEnterFullscreen) { el.webkitEnterFullscreen(); } } catch (e) {} break;
+          case 'skipAd':
+            try { var sb = skipButton(); if (sb) { sb.click(); } } catch (e) {} break;
           case 'next':
             if (kv.handlers.nexttrack) { try { kv.handlers.nexttrack({ action: 'nexttrack' }); } catch (e) {} } break;
           case 'prev':
